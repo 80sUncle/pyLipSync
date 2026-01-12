@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+uv.lock
 *.egg-info/
 
 # Virtual environments
@@ -7,3 +8,6 @@ __pycache__/
 
 # Testing
 .pytest_cache/
+
+# Build
+dist/
