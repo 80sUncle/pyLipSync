@@ -1,10 +1,26 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [0.2.0] - 2026-01-12
 
-## [0.1.0] - 2025-10-13
+### Breaking Changes
+- **Folder structure**: `data/` renamed to `phonemes/` and `phonemes.json` renamed to `template.json`
+- **Template format**: Now includes normalization stats. Old templates must be removed to generate the new one.
+
+### New Features
+- **Direct file loading**: Pass audio file paths to `extract_phoneme_segments()` without pre-loading
+- **`return_seconds`**: Get segment times in seconds instead of sample indices
+- **`return_audio`**: Include raw audio chunks in segment results
+
+### Improvements
+- Internal refactoring for cleaner, more maintainable code
+- Enhanced test coverage with new test cases
+
+---
+
+## [0.1.3] - 2025-10-13
+
 ### Added
-- Initial release
+- Initial stable release
 - MFCC-based phoneme detection
 - Support for custom phoneme templates
 - Three comparison methods: L1 Norm, L2 Norm, Cosine Similarity
