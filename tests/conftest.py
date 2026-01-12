@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from pylipsync import LipSync
+from pylipsync import PhonemeAnalyzer
 
 @pytest.fixture
 def simple_sine_wave():
@@ -22,4 +22,4 @@ def silence_audio():
 @pytest.fixture
 def lipsync():
     """Create a LipSync instance."""
-    return LipSync()
+    return PhonemeAnalyzer()

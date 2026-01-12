@@ -1,1 +1,1 @@
-recursive-include pylipsync/data *
+recursive-include pylipsync/phonemes *

@@ -1,97 +1,129 @@
 import pytest
 import numpy as np
-from pylipsync import LipSync, CompareMethod
+import librosa as lb
+from pathlib import Path
+from pylipsync import PhonemeAnalyzer, CompareMethod
+import pylipsync
 
-class TestValidation:
-    """Test that bad inputs are caught."""
-    
+# Get package data directory
+PACKAGE_DIR = Path(pylipsync.__file__).parent
+
+class TestAnalyzerValidation:
     def test_invalid_silence_threshold(self):
-        """Test silence threshold validation."""
         with pytest.raises(ValueError):
-            LipSync(silence_threshold=1.5)
+            PhonemeAnalyzer(silence_threshold=1.5)
         with pytest.raises(ValueError):
-            LipSync(silence_threshold=-0.1)
+            PhonemeAnalyzer(silence_threshold=-0.1)
     
-    def test_empty_audio_rejected(self, lipsync: LipSync):
-        """Test that empty audio is rejected."""
-        with pytest.raises(ValueError):
-            lipsync.process_audio_segments(np.array([]), 16000)
-    
-    def test_invalid_sample_rate(self, lipsync: LipSync, simple_sine_wave: tuple[np.ndarray, int]):
-        """Test that invalid sample rates are rejected."""
+    def test_invalid_sample_rate(self, lipsync: PhonemeAnalyzer, simple_sine_wave: tuple[np.ndarray, int]):
         audio, _ = simple_sine_wave
         with pytest.raises(ValueError):
-            lipsync.process_audio_segments(audio, -1)
+            lipsync.extract_phoneme_segments(audio, -1)
         with pytest.raises(ValueError):
-            lipsync.process_audio_segments(audio, 0)
+            lipsync.extract_phoneme_segments(audio, 0)
     
-    def test_invalid_audio_dimensions(self, lipsync: LipSync):
-        """Test that 2D audio is rejected."""
+    def test_invalid_audio_dimensions(self, lipsync: PhonemeAnalyzer):
         audio_2d = np.zeros((2, 1000))
         with pytest.raises(ValueError):
-            lipsync.process_audio_segments(audio_2d, 16000)
-
-
-class TestCoreProcessing:
-    """Test the main audio processing functionality."""
+            lipsync.extract_phoneme_segments(audio_2d, 16000)
     
-    def test_process_audio_segments(self, lipsync: LipSync, simple_sine_wave: tuple[np.ndarray, int]):
-        """Test that audio processing returns valid segments."""
-        audio, sr = simple_sine_wave
-        segments = lipsync.process_audio_segments(audio, sr)
+    def test_audio_too_short_after_downsampling(self, lipsync: PhonemeAnalyzer):
+        sample_rate = 16000
+        duration_ms = 32
+        num_samples = int(sample_rate * duration_ms / 1000)
+        audio = np.random.randn(num_samples)
         
-        # Basic sanity checks
+        with pytest.raises(ValueError):
+            lipsync.extract_phoneme_segments(audio, sample_rate, window_size_ms=64.0)
+
+
+class TestAnalyzerProcessing:
+    def test_process_audio_segments(self, lipsync: PhonemeAnalyzer, simple_sine_wave: tuple[np.ndarray, int]):
+        audio, sr = simple_sine_wave
+        segments = lipsync.extract_phoneme_segments(audio, sr)
+        
         assert len(segments) > 0
         assert all(len(seg.phonemes) > 0 for seg in segments)
-        assert all(seg.volume >= 0 for seg in segments)
-        assert all(0 <= seg.normalized_volume <= 1 for seg in segments)
+        assert all(seg.start >= 0 for seg in segments)
+        assert all(seg.end > seg.start for seg in segments)
     
-    def test_silence_detection(self, lipsync: LipSync, silence_audio: tuple[np.ndarray, int]):
-        """Test that silence is properly detected."""
+    def test_silence_detection(self, lipsync: PhonemeAnalyzer, silence_audio: tuple[np.ndarray, int]):
         audio, sr = silence_audio
-        segments = lipsync.process_audio_segments(audio, sr)
+        segments = lipsync.extract_phoneme_segments(audio, sr)
         
-        # Most segments should be silence
         silence_count = sum(1 for seg in segments if seg.is_silence())
-        assert silence_count > len(segments) * 0.8  # At least 80% silence
+        assert silence_count > len(segments) * 0.8
     
     def test_comparison_methods_all_work(self, simple_sine_wave: tuple[np.ndarray, int]):
-        """Test that all comparison methods produce results."""
         audio, sr = simple_sine_wave
         
         compare_methods = [CompareMethod.L1_NORM, CompareMethod.L2_NORM, CompareMethod.COSINE_SIMILARITY]
         for method in compare_methods:
-            lipsync = LipSync(compare_method=method)
-            segments = lipsync.process_audio_segments(audio, sr)
+            lipsync = PhonemeAnalyzer(compare_method=method)
+            segments = lipsync.extract_phoneme_segments(audio, sr)
             assert len(segments) > 0
-
-
-class TestIntegration:
-    """End to end test with real package audio."""
     
-    def test_with_package_audio_file(self, lipsync: LipSync):
-        """Test processing actual phoneme audio from the package."""
-        import os, librosa
+    def test_return_seconds_format(self, lipsync: PhonemeAnalyzer, simple_sine_wave: tuple[np.ndarray, int]):
+        audio, sr = simple_sine_wave
+        segments = lipsync.extract_phoneme_segments(audio, sr, return_seconds=True)
         
-        lipsync = LipSync()
+        assert len(segments) > 0
 
-        package_dir = os.path.dirname(os.path.abspath(__file__))
-        audio_path = os.path.join(package_dir, "audio", "aa", "A_female.mp3")
+        for seg in segments:
+            assert isinstance(seg.start, float)
+            assert isinstance(seg.end, float)
+            assert seg.start >= 0.0
+            assert seg.end > seg.start
+    
+    def test_return_audio_included(self, lipsync: PhonemeAnalyzer, simple_sine_wave: tuple[np.ndarray, int]):
+        audio, sr = simple_sine_wave
+        segments = lipsync.extract_phoneme_segments(audio, sr, return_audio=True)
         
-        if os.path.exists(audio_path):
-            audio, sr = librosa.load(audio_path, sr=None)
-            segments = lipsync.process_audio_segments(audio, sr)
-            
-            assert len(segments) > 0
-            
-            # Should predominantly detect "aa" phoneme
-            non_silence = [s for s in segments if not s.is_silence()]
-            if non_silence:
-                phoneme_counts = {}
-                for seg in non_silence:
-                    name = seg.most_prominent_phoneme().name
-                    phoneme_counts[name] = phoneme_counts.get(name, 0) + 1
-                
-                # "aa" should be most common
-                most_common = max(phoneme_counts, key=phoneme_counts.get)
-                assert most_common == "aa", f"Expected 'aa', got '{most_common}'"
+        assert len(segments) > 0
+
+        for seg in segments:
+            assert seg.audio is not None
+            assert isinstance(seg.audio, np.ndarray)
+            assert len(seg.audio) > 0
+    
+    def test_path_based_loading(self, lipsync: PhonemeAnalyzer):
+        audio_path = PACKAGE_DIR / "phonemes" / "audio" / "aa" / "A_female.mp3"
+        assert audio_path.exists(), f"Test audio file not found: {audio_path}"
+        
+        segments = lipsync.extract_phoneme_segments(str(audio_path))
+        
+        assert len(segments) > 0
+        assert all(len(seg.phonemes) > 0 for seg in segments)
+        assert all(seg.start >= 0 for seg in segments)
+        assert all(seg.end > seg.start for seg in segments)
+
+
+class TestAnalyzerIntegration:
+    @pytest.mark.parametrize("phoneme,audio_file", [
+        ("aa", "A_female.mp3"),
+        ("ee", "E_female.mp3"),
+        ("ih", "I_female.mp3"),
+        ("oh", "O_female.mp3"),
+        ("ou", "U_female.mp3"),
+    ])
+    def test_phoneme_detection(self, lipsync: PhonemeAnalyzer, phoneme: str, audio_file: str):
+        """Test that each phoneme is correctly detected from its audio sample."""
+        audio_path = PACKAGE_DIR / "phonemes" / "audio" / phoneme / audio_file
+        
+        assert audio_path.exists(), f"Audio file not found: {audio_path}"
+        
+        audio, sr = lb.load(str(audio_path), sr=None)
+        segments = lipsync.extract_phoneme_segments(audio, sr)
+        
+        assert len(segments) > 0
+        
+        non_silence = [s for s in segments if not s.is_silence()]
+        assert len(non_silence) > 0, "Expected non-silence segments"
+        
+        phoneme_counts = {}
+        for seg in non_silence:
+            name = seg.most_prominent_phoneme().name
+            phoneme_counts[name] = phoneme_counts.get(name, 0) + 1
+        
+        most_common = max(phoneme_counts, key=phoneme_counts.get)
+        assert most_common == phoneme, f"Expected '{phoneme}', got '{most_common}'"
