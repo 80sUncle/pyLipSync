@@ -1,6 +1,10 @@
-from .types import Phoneme, PhonemeSegment, LipSyncInfo
-from .comparison import CompareMethod
-from .core import LipSync
+from .types import Phoneme, PhonemeSegment
+from .similarity import CompareMethod
+from .analyzer import PhonemeAnalyzer
 
-__version__ = "0.1.0"
-__all__ = ["Phoneme", "PhonemeSegment", "LipSyncInfo", "CompareMethod", "LipSync", "__version__"]
+__all__ = [
+    "Phoneme",
+    "PhonemeSegment",
+    "CompareMethod",
+    "PhonemeAnalyzer"
+]
