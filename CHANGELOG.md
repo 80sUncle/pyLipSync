@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.1] - 2026-01-13
+
+### Breaking Changes
+- **Silence phoneme now included**: `segment.phonemes` now includes the silence phoneme. Previously, only speech phonemes were returned, with silence indicated by all targets being zero.
+
+### Bug Fixes
+- **Full audio coverage**: Fixed windowing logic to analyze audio all the way to the end. Previously, the final ~50ms of audio was not processed.
+
+### Improvements
+- Updated test suite to include silence phoneme validation
+- Minor code cleanup
+
+---
+
 ## [0.2.0] - 2026-01-12
 
 ### Breaking Changes
