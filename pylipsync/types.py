@@ -1,6 +1,7 @@
 import numpy as np
 from dataclasses import dataclass
 
+
 @dataclass
 class Phoneme:
     """Represents a single phoneme with a target confidence score.
@@ -42,8 +43,6 @@ class PhonemeSegment:
 
         return segment
 
-    def most_prominent_phoneme(self) -> Phoneme:
+    @property
+    def dominant_phoneme(self) -> Phoneme:
         return max(self.phonemes, key=lambda phoneme: phoneme.target)
-
-    def is_silence(self) -> bool:
-        return all(phoneme.target == 0 for phoneme in self.phonemes)

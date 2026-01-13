@@ -7,17 +7,14 @@ class CompareMethod(Enum):
     L2_NORM = "L2Norm"
     COSINE_SIMILARITY = "CosineSimilarity"
 
-
 def _l1_score(mfcc: np.ndarray, template: np.ndarray) -> float:
     distance = np.mean(np.abs(mfcc - template))
     return 10.0 ** (-distance)
-
 
 def _l2_score(mfcc: np.ndarray, template: np.ndarray) -> float:
     diff = mfcc - template
     distance = np.sqrt(np.mean(diff ** 2))
     return 10.0 ** (-distance)
-
 
 def _cosine_score(mfcc: np.ndarray, template: np.ndarray) -> float:
     dot_product = np.dot(mfcc, template)
@@ -38,7 +35,6 @@ _SCORE_FUNCTIONS = {
     CompareMethod.L2_NORM: _l2_score,
     CompareMethod.COSINE_SIMILARITY: _cosine_score,
 }
-
 
 def compute_similarity(mfcc: np.ndarray, template: np.ndarray, compare_method: CompareMethod) -> float:
     """Compute similarity score between MFCC and template.

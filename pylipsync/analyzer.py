@@ -1,5 +1,3 @@
-"""MFCC-based phoneme analyzer for lip synchronization."""
-
 import os
 import json
 import logging
@@ -150,31 +148,43 @@ class PhonemeAnalyzer:
         
         return phonemes
 
-    def _separate_silence_phoneme(self, phonemes: list[Phoneme]) -> tuple[list[Phoneme], Phoneme]:
+    def _predict_phonemes(self, mfcc: np.ndarray, volume: float) -> list[Phoneme]:
+        raw_phonemes = self._compute_phoneme_targets(mfcc)
+        normalized_phonemes = self._normalize_targets(raw_phonemes)
+        
+        if self._silence_threshold_met(normalized_phonemes):
+            final_phonemes = self._supress_speech_phonemes(normalized_phonemes)
+        else:    
+            final_phonemes = self._apply_volume_weighting(normalized_phonemes, self._normalize_volume(volume))
+
+        return final_phonemes
+
+    def _normalize_targets(self, phonemes: list[Phoneme]) -> list[Phoneme]:
+        total = sum(phoneme.target for phoneme in phonemes)
+        if total > 0:
+            for phoneme in phonemes:
+                phoneme.target /= total
+        return phonemes
+
+    def _silence_threshold_met(self, phonemes: list[Phoneme]) -> bool:
         silence_phoneme = next((p for p in phonemes if p.name == self.silence_phoneme), None)
         
         if silence_phoneme is None:
             raise ValueError(f"Silence phoneme '{self.silence_phoneme}' not found")
         
-        non_silence_phonemes = [p for p in phonemes if p.name != self.silence_phoneme]
-        return non_silence_phonemes, silence_phoneme
-
-    def _predict_phonemes(self, mfcc: np.ndarray, volume: float) -> list[Phoneme]:
-        phonemes = self._compute_phoneme_targets(mfcc)
-        
-        phonemes, silence_phoneme = self._separate_silence_phoneme(phonemes)
-
-        if self._silence_threshold_met(silence_phoneme, phonemes):
-            phonemes = self._zero_out_targets(phonemes)
-        else:
-            phonemes = self._normalize_targets(phonemes)
-            phonemes = self._apply_volume_weighting(phonemes, self._normalize_volume(volume))
-
-        return phonemes
-
-    def _silence_threshold_met(self, silence_phoneme: Phoneme, phonemes: list[Phoneme]) -> bool:
-        total = silence_phoneme.target + sum(phoneme.target for phoneme in phonemes)
+        total = sum(phoneme.target for phoneme in phonemes)
         return silence_phoneme.target / total >= self.silence_threshold
+    
+    def _supress_speech_phonemes(self, phonemes: list[Phoneme]) -> list[Phoneme]:
+        for phoneme in phonemes:
+            if phoneme.name != self.silence_phoneme:
+                phoneme.target = 0.0
+        return phonemes
+    
+    def _apply_volume_weighting(self, phonemes: list[Phoneme], volume: float) -> list[Phoneme]:
+        for phoneme in phonemes:
+            phoneme.target *= volume
+        return phonemes
 
     def _normalize_volume(self, volume: float) -> float:
         if volume < self.EPSILON:
@@ -187,18 +197,6 @@ class PhonemeAnalyzer:
     def _zero_out_targets(self, phonemes: list[Phoneme]) -> list[Phoneme]:
         for phoneme in phonemes:
             phoneme.target = 0.0
-        return phonemes
-
-    def _apply_volume_weighting(self, phonemes: list[Phoneme], volume: float) -> list[Phoneme]:
-        for phoneme in phonemes:
-            phoneme.target *= volume
-        return phonemes
-
-    def _normalize_targets(self, phonemes: list[Phoneme]) -> list[Phoneme]:
-        total = sum(phoneme.target for phoneme in phonemes)
-        if total > 0:
-            for phoneme in phonemes:
-                phoneme.target /= total
         return phonemes
 
     def _extract_features(self, audio: np.ndarray, sample_rate: int) -> tuple[list[float], float]:
@@ -232,11 +230,15 @@ class PhonemeAnalyzer:
         return_audio: bool = False,
         return_seconds: bool = False
     ) -> list[PhonemeSegment]:
-        """Extract phoneme segments from audio.
+        """Extract phoneme segments from audio using padded centered windows.
+        
+        Uses overlapping windows for better MFCC quality, but centers each window
+        on the segment it represents. Pads audio at start/end so segments cover
+        the full audio from sample 0 to the end.
         
         Args:
-            audio: 1D audio array.
-            sample_rate: Sample rate of the audio.
+            audio: 1D audio array or path to audio file.
+            sample_rate: Sample rate of the audio (required if audio is array).
             window_size_ms: Analysis window size in milliseconds.
             fps: Output frames per second.
             return_audio: Include audio data in each segment.
@@ -255,28 +257,33 @@ class PhonemeAnalyzer:
 
         downsampled_audio = downsample(audio, sample_rate, self.TARGET_SAMPLE_RATE)
         window_size = int((window_size_ms / 1000) * self.TARGET_SAMPLE_RATE)
-        
-        if len(downsampled_audio) < window_size:
-            raise ValueError(f"Downsampled audio too short: {len(downsampled_audio)} samples < {window_size} samples")
-        
         hop_size = self.TARGET_SAMPLE_RATE // fps
+        
+        if len(downsampled_audio) < hop_size:
+            raise ValueError(f"Downsampled audio too short: {len(downsampled_audio)} samples < {hop_size}")
+        
+        half_context = (window_size - hop_size) // 2
+        padded_audio = np.pad(downsampled_audio, (half_context, half_context), mode="reflect")
+        
         sample_rate_ratio = sample_rate / self.TARGET_SAMPLE_RATE
+        original_audio_length = len(downsampled_audio)
         
         segments = []
-        for i in range(0, len(downsampled_audio) - window_size + 1, hop_size):
-            downsampled_audio_chunk = downsampled_audio[i: i + window_size]
+        for i in range(0, original_audio_length, hop_size):
+            audio_chunk = padded_audio[i:i + window_size]
+            segment_end = min(i + hop_size, original_audio_length)
             
             original_audio_start = int(i * sample_rate_ratio)
-            original_audio_end = int((i + hop_size) * sample_rate_ratio)
-            original_audio_chunk = audio[original_audio_start: original_audio_end]
+            original_audio_end = min(int(segment_end * sample_rate_ratio), len(audio))
+            original_audio_chunk = audio[original_audio_start:original_audio_end]
             
-            mfcc, volume = self._extract_features(downsampled_audio_chunk, self.TARGET_SAMPLE_RATE)
+            mfcc, volume = self._extract_features(audio_chunk, self.TARGET_SAMPLE_RATE)
             phonemes = self._predict_phonemes(mfcc, volume)
             segments.append(
                 PhonemeSegment(
                     phonemes,
-                    original_audio_start / sample_rate if return_seconds else original_audio_start, 
-                    original_audio_end / sample_rate if return_seconds else original_audio_end, 
+                    original_audio_start / sample_rate if return_seconds else original_audio_start,
+                    original_audio_end / sample_rate if return_seconds else original_audio_end,
                     original_audio_chunk if return_audio else None,
                 )
             )
