@@ -5,7 +5,7 @@ from pathlib import Path
 from pylipsync import PhonemeAnalyzer, CompareMethod
 import pylipsync
 
-# Get package data directory
+
 PACKAGE_DIR = Path(pylipsync.__file__).parent
 
 class TestAnalyzerValidation:
@@ -29,7 +29,7 @@ class TestAnalyzerValidation:
     
     def test_audio_too_short_after_downsampling(self, lipsync: PhonemeAnalyzer):
         sample_rate = 16000
-        duration_ms = 32
+        duration_ms = 10
         num_samples = int(sample_rate * duration_ms / 1000)
         audio = np.random.randn(num_samples)
         
@@ -51,7 +51,7 @@ class TestAnalyzerProcessing:
         audio, sr = silence_audio
         segments = lipsync.extract_phoneme_segments(audio, sr)
         
-        silence_count = sum(1 for seg in segments if seg.is_silence())
+        silence_count = sum(1 for seg in segments if seg.dominant_phoneme.name == "silence")
         assert silence_count > len(segments) * 0.8
     
     def test_comparison_methods_all_work(self, simple_sine_wave: tuple[np.ndarray, int]):
@@ -105,6 +105,7 @@ class TestAnalyzerIntegration:
         ("ih", "I_female.mp3"),
         ("oh", "O_female.mp3"),
         ("ou", "U_female.mp3"),
+        ("silence", "silence.mp3"),
     ])
     def test_phoneme_detection(self, lipsync: PhonemeAnalyzer, phoneme: str, audio_file: str):
         """Test that each phoneme is correctly detected from its audio sample."""
@@ -117,12 +118,9 @@ class TestAnalyzerIntegration:
         
         assert len(segments) > 0
         
-        non_silence = [s for s in segments if not s.is_silence()]
-        assert len(non_silence) > 0, "Expected non-silence segments"
-        
         phoneme_counts = {}
-        for seg in non_silence:
-            name = seg.most_prominent_phoneme().name
+        for seg in segments:
+            name = seg.dominant_phoneme.name
             phoneme_counts[name] = phoneme_counts.get(name, 0) + 1
         
         most_common = max(phoneme_counts, key=phoneme_counts.get)
