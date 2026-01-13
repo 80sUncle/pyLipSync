@@ -22,49 +22,56 @@ pip install -e .
 
 ## Quick Start
 
-The library comes with built-in audio templates for common phonemes, so you can start using it immediately:
+Get started with just a few lines of code:
+
+```python
+from pylipsync import PhonemeAnalyzer
+
+analyzer = PhonemeAnalyzer()
+
+segments = analyzer.extract_phoneme_segments("path/to/your/audio.mp3")
+
+for segment in segments:
+    print(f"{segment.start}-{segment.end}: {segment.dominant_phoneme.name}")
+```
+
+### Advanced Usage
+
+For more control over the analysis, you can customize the analyzer and extraction parameters:
 
 ```python
 from pylipsync import PhonemeAnalyzer, CompareMethod
-
-# Initialize PhonemeAnalyzer - works out of the box with default templates
-analyzer = PhonemeAnalyzer(
-    compare_method=CompareMethod.COSINE_SIMILARITY  # Options: L1_NORM, L2_NORM, COSINE_SIMILARITY
-)
-
-# Method 1: Pass audio file path directly (simplest)
-segments = analyzer.extract_phoneme_segments(
-    "path/to/your/audio.mp3",
-    window_size_ms=64.0,    # Window size in milliseconds
-    fps=60,                 # Frames per second for output
-    return_seconds=True     # Return times in seconds (default: False = sample indices)
-)
-
-# Get the most prominent phoneme for each segment
-for segment in segments:
-    most_prominent_phoneme = segment.most_prominent_phoneme() if not segment.is_silence() else None
-    print(f"({segment.start:.4f}-{segment.end:.4f}) | Most Prominent Phoneme: {most_prominent_phoneme}")
-```
-
-**Alternative: Pre-load audio**:
-
-```python
 import librosa as lb
 
-# Method 2: Load audio first
-audio, sr = lb.load("path/to/your/audio.mp3", sr=None)
+# Initialize with custom settings
+analyzer = PhonemeAnalyzer(
+    compare_method=CompareMethod.COSINE_SIMILARITY,  # L1_NORM, L2_NORM, COSINE_SIMILARITY
+    silence_threshold=0.3
+)
 
+# Method 1: Pass file path directly
+segments = analyzer.extract_phoneme_segments(
+    "path/to/your/audio.mp3",
+    window_size_ms=64.0,    # Analysis window size
+    fps=60,                 # Output frame rate
+    return_seconds=True     # Return times in seconds
+)
+
+# Method 2: Pre-load audio as NumPy array
+audio, sr = lb.load("path/to/your/audio.mp3", sr=None)
 segments = analyzer.extract_phoneme_segments(
     audio,
-    sr,
+    sr,                     # Required when passing NumPy array
     window_size_ms=64.0,
     fps=60,
-    return_audio=True       # Include audio chunk in each segment (default: False)
+    return_audio=True       # Include audio chunk in each segment
 )
 
 for segment in segments:
-    print(f"Segment audio shape: {segment.audio.shape if segment.audio is not None else 'None'}")
+    print(f"{segment.start}-{segment.end} | Dominant Phoneme: {segment.dominant_phoneme.name}")
 ```
+
+See [`examples/advanced_usage.py`](examples/advanced_usage.py) for a complete guide with all configuration options.
 
 ## Default Phonemes
 
